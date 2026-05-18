@@ -467,6 +467,16 @@ def render_sidebar(kpi_summary: dict, health):
         if not free_ready:
             st.warning("No free provider configured. Add a key to .env")
 
+        st.markdown("---")
+        st.markdown(
+            "<div style='text-align:center;padding:6px 0 10px'>"
+            "<span style='font-size:.68rem;color:#64748B;letter-spacing:.04em'>BUILT BY</span><br>"
+            "<span style='font-size:.88rem;font-weight:700;color:#CBD5E1'>Oswald Jaures Koffi</span><br>"
+            "<span style='font-size:.68rem;color:#64748B'>AI & Financial Analytics</span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
     return page, company_name, industry
 
 
