@@ -803,10 +803,14 @@ def page_forecasts(forecasts, fc_df):
         fill="toself", fillcolor="rgba(217,119,6,0.12)",
         line=dict(color="rgba(0,0,0,0)"), name="80% CI",
     ))
-    # Separator line between history and forecast
+    # Separator line between history and forecast (add_vline fails on categorical axes)
     last_hist = hist_x[-1]
-    fig.add_vline(x=last_hist, line_dash="dot", line_color=C["gray"],
-                  annotation_text="Forecast start")
+    fig.add_shape(type="line", x0=last_hist, x1=last_hist,
+                  y0=0, y1=1, yref="paper",
+                  line=dict(color=C["gray"], dash="dot", width=1))
+    fig.add_annotation(x=last_hist, y=1.02, yref="paper",
+                       text="◀ Forecast start", showarrow=False,
+                       font=dict(size=10, color=C["gray"]), xanchor="right")
     fig.update_layout(title=f"{metric_choice.replace('_', ' ').title()} — Forecast ({fc.model_type})",
                       yaxis_title="$M", **_base_layout(420))
     st.plotly_chart(fig, use_container_width=True)
