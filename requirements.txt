@@ -1,0 +1,26 @@
+# CFO Copilot — Python dependencies
+# Install with: pip install -r requirements.txt
+
+# Core data
+pandas>=2.1.0
+numpy>=1.26.0
+
+# Time-series forecasting
+statsmodels>=0.14.0
+
+# Machine learning
+scikit-learn>=1.4.0
+
+# LLM — openai package covers ALL free providers:
+#   Gemini, Groq, Mistral, Together AI, OpenRouter, Ollama
+openai>=1.30.0
+
+# Anthropic Claude (only needed if LLM_PROVIDER=anthropic)
+# anthropic>=0.40.0
+
+# Dashboard
+streamlit>=1.35.0
+plotly>=5.20.0
+
+# Env config
+python-dotenv>=1.0.0

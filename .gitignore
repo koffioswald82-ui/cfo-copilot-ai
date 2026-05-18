@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.eggs/
+dist/
+build/
+*.egg-info/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Secrets
+.env
+
+# Data outputs
+outputs/
+*.parquet
+
+# IDE
+.vscode/
+.idea/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# OS
+.DS_Store
+Thumbs.db
