@@ -788,31 +788,56 @@ def page_forecasts(forecasts, fc_df):
 
     metric_choice = st.selectbox("Visualize forecast:", list(forecasts.keys()))
     fc = forecasts[metric_choice]
-    hist_x = [str(p) for p in fc.historical.index]
-    fc_x   = [str(p) for p in fc.forecast.index]
+
+    hist_labels = [str(p) for p in fc.historical.index]
+    fc_labels   = [str(p) for p in fc.forecast.index]
+    all_labels  = hist_labels + fc_labels
+    n_hist      = len(hist_labels)
+
+    # Numeric x-axis so add_vline + confidence band work correctly
+    x_hist = list(range(n_hist))
+    x_fc   = list(range(n_hist, n_hist + len(fc_labels)))
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=hist_x, y=fc.historical.values / 1e6,
-                             name="Historical", line=dict(color=C["blue"], width=2.5)))
-    fig.add_trace(go.Scatter(x=fc_x, y=fc.forecast.values / 1e6,
-                             name="Forecast", mode="lines+markers",
-                             line=dict(color=C["amber"], dash="dash", width=2.5)))
     fig.add_trace(go.Scatter(
-        x=fc_x + fc_x[::-1],
+        x=x_hist, y=fc.historical.values / 1e6,
+        name="Historical", line=dict(color=C["blue"], width=2.5),
+    ))
+    # Bridge connector (last hist point → first forecast point, no legend entry)
+    fig.add_trace(go.Scatter(
+        x=[n_hist - 1, n_hist],
+        y=[fc.historical.values[-1] / 1e6, fc.forecast.values[0] / 1e6],
+        mode="lines", line=dict(color=C["amber"], dash="dash", width=2.5),
+        showlegend=False,
+    ))
+    fig.add_trace(go.Scatter(
+        x=x_fc, y=fc.forecast.values / 1e6,
+        name="Forecast", mode="lines+markers",
+        line=dict(color=C["amber"], dash="dash", width=2.5),
+    ))
+    fig.add_trace(go.Scatter(
+        x=x_fc + x_fc[::-1],
         y=list(fc.confidence_upper / 1e6) + list(fc.confidence_lower / 1e6)[::-1],
         fill="toself", fillcolor="rgba(217,119,6,0.12)",
         line=dict(color="rgba(0,0,0,0)"), name="80% CI",
     ))
-    # Separator line between history and forecast (add_vline fails on categorical axes)
-    last_hist = hist_x[-1]
-    fig.add_shape(type="line", x0=last_hist, x1=last_hist,
-                  y0=0, y1=1, yref="paper",
-                  line=dict(color=C["gray"], dash="dot", width=1))
-    fig.add_annotation(x=last_hist, y=1.02, yref="paper",
-                       text="◀ Forecast start", showarrow=False,
-                       font=dict(size=10, color=C["gray"]), xanchor="right")
-    fig.update_layout(title=f"{metric_choice.replace('_', ' ').title()} — Forecast ({fc.model_type})",
-                      yaxis_title="$M", **_base_layout(420))
+    # Separator — numeric axis supports add_vline perfectly
+    fig.add_vline(x=n_hist - 0.5, line_dash="dot", line_color=C["gray"], line_width=1.5)
+    fig.add_annotation(
+        x=n_hist - 0.5, y=1.04, yref="paper",
+        text="Forecast →", showarrow=False,
+        font=dict(size=10, color=C["gray"]), xanchor="left",
+    )
+    fig.update_xaxes(
+        tickmode="array",
+        tickvals=list(range(len(all_labels))),
+        ticktext=all_labels,
+        tickangle=-40,
+    )
+    fig.update_layout(
+        title=f"{metric_choice.replace('_', ' ').title()} — Forecast ({fc.model_type})",
+        yaxis_title="$M", **_base_layout(450),
+    )
     st.plotly_chart(fig, use_container_width=True)
     st.caption(f"Model: **{fc.model_type}** | In-sample MAPE: **{fc.mape_in_sample:.1f}%** | 80% confidence interval shown")
 
