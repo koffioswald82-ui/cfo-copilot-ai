@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # ─── Provider catalogue (used by UI for status display) ──────────────────────
 
 PROVIDER_INFO: dict[str, dict] = {
-    "gemini":     {"label": "Google Gemini",  "free": True,  "url": "https://aistudio.google.com",  "default_model": "gemini-1.5-flash"},
+    "gemini":     {"label": "Google Gemini",  "free": True,  "url": "https://aistudio.google.com",  "default_model": "gemini-2.0-flash"},
     "groq":       {"label": "Groq Cloud",     "free": True,  "url": "https://console.groq.com",      "default_model": "llama-3.3-70b-versatile"},
     "mistral":    {"label": "Mistral AI",     "free": True,  "url": "https://console.mistral.ai",    "default_model": "open-mistral-7b"},
     "together":   {"label": "Together AI",    "free": True,  "url": "https://api.together.ai",       "default_model": "meta-llama/Llama-3-70b-chat-hf"},
@@ -136,12 +136,12 @@ class _OpenAICompatBackend:
 class _GeminiBackend(_OpenAICompatBackend):
     """Google Gemini — free API via OpenAI-compatible endpoint.
     Get free key: https://aistudio.google.com → Get API key
-    Recommended: gemini-1.5-flash (free, fast, excellent quality)
+    Recommended: gemini-2.0-flash (free, latest, excellent quality)
     """
     _ENV_KEY = "GEMINI_API_KEY"
     _BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
     _SIGNUP_URL = "https://aistudio.google.com"
-    DEFAULT_MODEL = "gemini-1.5-flash"
+    DEFAULT_MODEL = "gemini-2.0-flash"
 
 
 class _GroqBackend(_OpenAICompatBackend):

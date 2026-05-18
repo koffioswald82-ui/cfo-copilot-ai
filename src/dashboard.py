@@ -449,41 +449,68 @@ def page_executive(income, balance, cash_flow, kpi_df, kpi_summary, forecasts, h
     latest   = kpi_summary["latest"]
     prev_row = kpi_df.iloc[-2] if len(kpi_df) > 1 else kpi_df.iloc[-1]
 
-    # ── Health Score + KPI cards ──────────────────────────────────────────────
-    col_gauge, col_k1, col_k2, col_k3, col_k4, col_k5 = st.columns([1.4, 1, 1, 1, 1, 1])
-    with col_gauge:
+    # ── Row 1 : Health gauge (left) + 10 KPI cards (right, 2 rows of 5) ─────
+    c_gauge, c_kpis = st.columns([1.6, 3.4])
+    with c_gauge:
         st.plotly_chart(chart_health_gauge(health), use_container_width=True)
-    with col_k1:
-        rev = income["revenue"].iloc[-1]
-        st.metric("Revenue", f"${rev/1e6:.2f}M",
-                  delta=f"{latest.get('revenue_growth_qoq', 0)*100:+.1f}% QoQ")
-    with col_k2:
-        em = latest.get("ebitda_margin", 0)
-        pe = prev_row.get("ebitda_margin", em)
-        st.metric("EBITDA Margin", f"{em*100:.1f}%", delta=f"{(em-pe)*100:+.1f}pp")
-    with col_k3:
-        st.metric("Net Margin", f"{latest.get('net_profit_margin',0)*100:.1f}%")
-    with col_k4:
-        cr = latest.get("current_ratio", 0)
-        st.metric("Current Ratio", f"{cr:.2f}x",
-                  delta="✓ Healthy" if cr >= 1.5 else "⚠ Monitor")
-    with col_k5:
-        de = latest.get("debt_to_equity", 0)
-        st.metric("Debt / Equity", f"{de:.2f}x",
-                  delta="✓ Low" if de < 1.0 else ("⚠ High" if de > 1.5 else "Moderate"))
+        st.markdown(
+            f"<p style='text-align:center;font-size:.8rem;color:{health.color};"
+            f"font-weight:700;margin-top:-18px'>{health.assessment}</p>",
+            unsafe_allow_html=True,
+        )
+    with c_kpis:
+        st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+        k1, k2, k3, k4, k5 = st.columns(5)
+        with k1:
+            rev = income["revenue"].iloc[-1]
+            st.metric("Revenue", f"${rev/1e6:.2f}M",
+                      delta=f"{latest.get('revenue_growth_qoq', 0)*100:+.1f}% QoQ")
+        with k2:
+            em = latest.get("ebitda_margin", 0)
+            pe = prev_row.get("ebitda_margin", em)
+            st.metric("EBITDA Margin", f"{em*100:.1f}%",
+                      delta=f"{(em-pe)*100:+.1f}pp")
+        with k3:
+            st.metric("Net Margin", f"{latest.get('net_profit_margin', 0)*100:.1f}%")
+        with k4:
+            cr = latest.get("current_ratio", 0)
+            st.metric("Current Ratio", f"{cr:.2f}x",
+                      delta="✓ Healthy" if cr >= 1.5 else "⚠ Monitor")
+        with k5:
+            de = latest.get("debt_to_equity", 0)
+            st.metric("Debt / Equity", f"{de:.2f}x",
+                      delta="✓ Low" if de < 1.0 else ("⚠ High" if de > 1.5 else "Moderate"))
+
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        k6, k7, k8, k9, k10 = st.columns(5)
+        with k6:
+            ni = income["net_income"].iloc[-1]
+            st.metric("Net Income", f"${ni/1e6:.2f}M")
+        with k7:
+            ocf = latest.get("operating_cash_flow_margin", 0)
+            st.metric("OCF Margin", f"{ocf*100:.1f}%")
+        with k8:
+            roe = latest.get("return_on_equity", 0)
+            st.metric("ROE", f"{roe*100:.1f}%")
+        with k9:
+            ic = latest.get("interest_coverage", 0)
+            st.metric("Int. Coverage", f"{ic:.1f}x")
+        with k10:
+            yoy = latest.get("revenue_growth_yoy", 0)
+            st.metric("Rev Growth YoY", f"{yoy*100:+.1f}%")
 
     st.markdown("---")
 
-    # ── Charts row 1 ─────────────────────────────────────────────────────────
-    c1, c2 = st.columns([3, 2])
+    # ── Row 2 : Revenue + Margins (equal split) ───────────────────────────────
+    c1, c2 = st.columns(2)
     with c1:
         st.plotly_chart(chart_revenue(income, forecasts), use_container_width=True)
     with c2:
         benchmark = INDUSTRY_BENCHMARKS.get(industry, {})
         st.plotly_chart(chart_margins(kpi_df, benchmark), use_container_width=True)
 
-    # ── Charts row 2 ─────────────────────────────────────────────────────────
-    c3, c4 = st.columns([3, 2])
+    # ── Row 3 : Cash flow + Ratios (equal split) ──────────────────────────────
+    c3, c4 = st.columns(2)
     with c3:
         st.plotly_chart(chart_cashflow(cash_flow, forecasts), use_container_width=True)
     with c4:
