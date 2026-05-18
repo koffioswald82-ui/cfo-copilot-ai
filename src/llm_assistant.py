@@ -124,13 +124,27 @@ class _OpenAICompatBackend:
         self.model = os.environ.get("LLM_MODEL", self.DEFAULT_MODEL)
 
     def chat(self, messages: list[dict], max_tokens: int = 1200) -> str:
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=0.3,
-        )
-        return response.choices[0].message.content
+        import time
+        last_err: Exception | None = None
+        for attempt in range(3):
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=0.3,
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                last_err = e
+                err = str(e)
+                if "429" in err or "RESOURCE_EXHAUSTED" in err or "rate_limit" in err.lower():
+                    wait = 30 * (attempt + 1)
+                    logger.warning("Rate limit (attempt %d/3) — waiting %ds…", attempt + 1, wait)
+                    time.sleep(wait)
+                else:
+                    raise
+        raise last_err  # type: ignore[misc]
 
 
 class _GeminiBackend(_OpenAICompatBackend):
@@ -279,15 +293,43 @@ def get_provider_status() -> dict[str, bool]:
 # ─── Public CFOAssistant ──────────────────────────────────────────────────────
 
 class CFOAssistant:
-    """Provider-agnostic CFO assistant. Configure via LLM_PROVIDER in .env."""
+    """Provider-agnostic CFO assistant with automatic fallback on rate limits."""
+
+    # Free providers tried in order when primary hits rate limit
+    _FALLBACK_ORDER = ["groq", "together", "openrouter", "mistral", "ollama"]
 
     def __init__(self, provider: str | None = None):
         self._backend = _get_backend(provider)
         self._conversation_history: list[dict] = []
-        self.provider = provider or os.environ.get("LLM_PROVIDER", "gemini")
+        self.provider = provider or os.environ.get("LLM_PROVIDER", "groq")
 
     def _messages_with_system(self, messages: list[dict]) -> list[dict]:
         return [{"role": "system", "content": SYSTEM_PROMPT}] + messages
+
+    def _chat(self, messages: list[dict], max_tokens: int) -> str:
+        """Chat with automatic fallback to other free providers on rate limit."""
+        try:
+            return self._backend.chat(messages, max_tokens)
+        except Exception as e:
+            err = str(e)
+            if not ("429" in err or "RESOURCE_EXHAUSTED" in err or "rate_limit" in err.lower()):
+                raise
+            # Rate limited — try configured free providers as fallback
+            logger.warning("Rate limit on %s — trying fallbacks…", self.provider)
+            status = get_provider_status()
+            for fb in self._FALLBACK_ORDER:
+                if fb == self.provider or not status.get(fb, False):
+                    continue
+                try:
+                    result = _get_backend(fb).chat(messages, max_tokens)
+                    logger.info("Fallback to %s succeeded.", fb)
+                    return result
+                except Exception as fb_err:
+                    logger.warning("Fallback %s failed: %s", fb, fb_err)
+            raise RuntimeError(
+                f"All providers exhausted. Primary error: {err}\n"
+                "Configure GROQ_API_KEY at https://console.groq.com (free, generous limits)."
+            ) from e
 
     def generate_executive_summary(self, financial_data: dict[str, Any]) -> str:
         context = _build_financial_context(financial_data)
@@ -307,7 +349,7 @@ class CFOAssistant:
                 "Format this for a Board/CFO audience. Be direct, use numbers, be advisory."
             )}
         ])
-        return self._backend.chat(messages, max_tokens=1800)
+        return self._chat(messages, max_tokens=1800)
 
     def generate_scenario_narrative(
         self, scenario_name: str, base: dict, scenario: dict, assumptions: dict
@@ -330,7 +372,7 @@ class CFOAssistant:
                 "and (4) give one specific mitigation action the CFO should consider."
             )}
         ])
-        return self._backend.chat(messages, max_tokens=500)
+        return self._chat(messages, max_tokens=500)
 
     def explain_kpi_variance(
         self, metric: str, current_value: float, prior_value: float,
@@ -348,7 +390,7 @@ class CFOAssistant:
                 "whether it is concerning in context, and what the CFO should monitor."
             )}
         ])
-        return self._backend.chat(messages, max_tokens=500)
+        return self._chat(messages, max_tokens=500)
 
     def answer_question(self, question: str, financial_data: dict[str, Any]) -> str:
         if not self._conversation_history:
@@ -364,7 +406,7 @@ class CFOAssistant:
 
         self._conversation_history.append({"role": "user", "content": question})
         messages = self._messages_with_system(self._conversation_history)
-        answer = self._backend.chat(messages, max_tokens=800)
+        answer = self._chat(messages, max_tokens=800)
         self._conversation_history.append({"role": "assistant", "content": answer})
         return answer
 

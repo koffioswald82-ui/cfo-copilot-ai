@@ -21,6 +21,7 @@ openai>=1.30.0
 # Dashboard
 streamlit>=1.35.0
 plotly>=5.20.0
+openpyxl>=3.1.0
 
 # Env config
 python-dotenv>=1.0.0

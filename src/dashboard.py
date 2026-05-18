@@ -29,7 +29,7 @@ import streamlit as st
 
 sys.path.insert(0, str(_ROOT))
 
-from src.data_loader import load_financial_data
+from src.data_loader import load_financial_data, load_from_dataframes, SCHEMA
 from src.analysis import (
     compute_kpis, kpis_to_dataframe, summarise_kpis,
     compute_financial_health_score, compute_dupoint,
@@ -110,13 +110,10 @@ st.markdown("""
 
 # ─── Data Loading ─────────────────────────────────────────────────────────────
 
-@st.cache_data(show_spinner=False)
-def load_all():
-    datasets = load_financial_data("data")
-    income   = datasets["income_statement"]
-    balance  = datasets["balance_sheet"]
-    cf       = datasets["cash_flow"]
-
+def _compute_all(datasets: dict) -> tuple:
+    income  = datasets["income_statement"]
+    balance = datasets["balance_sheet"]
+    cf      = datasets["cash_flow"]
     kpi_report  = compute_kpis(income, balance, cf)
     kpi_df      = kpis_to_dataframe(kpi_report)
     kpi_summary = summarise_kpis(kpi_report)
@@ -124,8 +121,28 @@ def load_all():
     fc_df       = forecast_summary(forecasts)
     health      = compute_financial_health_score(kpi_report)
     dupoint     = compute_dupoint(income, balance)
-
     return datasets, kpi_report, kpi_df, kpi_summary, forecasts, fc_df, health, dupoint
+
+
+@st.cache_data(show_spinner=False)
+def load_all():
+    return _compute_all(load_financial_data("data"))
+
+
+@st.cache_data(show_spinner=False)
+def _excel_template_bytes() -> bytes:
+    """Generate downloadable Excel template from the sample data structure."""
+    import io
+    data_dir = _ROOT / "data"
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        pd.read_csv(data_dir / "income_statement.csv").to_excel(
+            writer, sheet_name="Income Statement", index=False)
+        pd.read_csv(data_dir / "balance_sheet.csv").to_excel(
+            writer, sheet_name="Balance Sheet", index=False)
+        pd.read_csv(data_dir / "cash_flow.csv").to_excel(
+            writer, sheet_name="Cash Flow", index=False)
+    return output.getvalue()
 
 
 # ─── Chart Helpers ────────────────────────────────────────────────────────────
@@ -388,18 +405,34 @@ def render_sidebar(kpi_summary: dict, health):
         page = st.radio(
             "Navigation",
             ["Executive Dashboard", "KPI Analysis", "Scenario Analysis",
-             "Forecasts", "Financial Health", "Anomalies & Risks", "AI CFO Assistant"],
+             "Forecasts", "Financial Health", "Anomalies & Risks",
+             "AI CFO Assistant", "Upload Data"],
             label_visibility="collapsed",
         )
 
         st.markdown("---")
         st.markdown("<p style='font-size:.75rem;font-weight:700;color:#94A3B8;letter-spacing:.08em'>COMPANY PROFILE</p>",
                     unsafe_allow_html=True)
-        company_name = st.text_input("Company name", value="Acme Corp", label_visibility="visible")
+        default_name = st.session_state.get("company_name_input", "Acme Corp")
+        company_name = st.text_input("Company name", value=default_name, label_visibility="visible",
+                                     key="company_name_input")
         industry     = st.selectbox("Industry sector", list(INDUSTRY_BENCHMARKS.keys()), index=0)
 
         st.markdown("---")
-        # Status badges
+        # Data source badge
+        using_custom = "uploaded_datasets" in st.session_state
+        src_color = "#16A34A" if using_custom else "#2563EB"
+        src_label = "Real Data (uploaded)" if using_custom else "Demo Data (sample)"
+        st.markdown(
+            f"<p style='font-size:.75rem;font-weight:700;color:#94A3B8;letter-spacing:.08em'>DATA SOURCE</p>"
+            f"<p style='font-size:.8rem;color:{src_color};font-weight:600;margin:2px 0'>● {src_label}</p>",
+            unsafe_allow_html=True,
+        )
+        if using_custom and st.button("Reset to Demo Data", use_container_width=True):
+            del st.session_state["uploaded_datasets"]
+            st.rerun()
+
+        st.markdown("---")
         st.markdown("<p style='font-size:.75rem;font-weight:700;color:#94A3B8;letter-spacing:.08em'>DATA STATUS</p>",
                     unsafe_allow_html=True)
         col_a, col_b = st.columns(2)
@@ -981,12 +1014,147 @@ def page_ai_assistant(income, balance, cash_flow, kpi_summary, fc_df, health, co
             st.markdown(answer)
 
 
+# ─── Upload Page ──────────────────────────────────────────────────────────────
+
+def page_upload():
+    st.markdown(
+        "<h2 style='color:#1B2A4A'>Upload Your Financial Data</h2>"
+        "<p style='color:#64748B'>Load your company's real financial statements to replace the demo data.</p>",
+        unsafe_allow_html=True,
+    )
+
+    # ── Download template ─────────────────────────────────────────────────────
+    st.markdown("### Step 1 — Download the template")
+    st.markdown(
+        "Fill in the **Excel template** with your quarterly financial data "
+        "(minimum 8 quarters recommended). The format must match exactly — "
+        "column names and period format `YYYY-Qn` (e.g. `2023-Q1`)."
+    )
+    c_dl1, c_dl2, _ = st.columns([1, 1, 3])
+    with c_dl1:
+        try:
+            tpl = _excel_template_bytes()
+            st.download_button(
+                "⬇ Excel Template (.xlsx)",
+                data=tpl,
+                file_name="cfo_copilot_template.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+        except Exception:
+            st.info("Excel template unavailable — use CSV templates below.")
+    with c_dl2:
+        # CSV fallback: zip of 3 CSVs as individual downloads
+        data_dir = _ROOT / "data"
+        csv_data = (data_dir / "income_statement.csv").read_bytes()
+        st.download_button("⬇ Income Statement (CSV)", csv_data,
+                           "income_statement_template.csv", "text/csv",
+                           use_container_width=True)
+
+    st.markdown("---")
+
+    # ── Upload section ────────────────────────────────────────────────────────
+    st.markdown("### Step 2 — Upload your data")
+
+    tab_excel, tab_csv = st.tabs(["Excel (recommended)", "3 CSV files"])
+
+    with tab_excel:
+        st.caption("Upload one Excel file with 3 sheets: **Income Statement**, **Balance Sheet**, **Cash Flow**")
+        excel_file = st.file_uploader(
+            "Upload Excel file", type=["xlsx", "xls"],
+            label_visibility="collapsed", key="upload_excel",
+        )
+        if excel_file:
+            _process_excel_upload(excel_file)
+
+    with tab_csv:
+        st.caption("Upload all three CSV files with matching column headers from the template.")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            f_inc = st.file_uploader("Income Statement", type="csv", key="upload_inc")
+        with c2:
+            f_bal = st.file_uploader("Balance Sheet", type="csv", key="upload_bal")
+        with c3:
+            f_cf  = st.file_uploader("Cash Flow", type="csv", key="upload_cf")
+        if f_inc and f_bal and f_cf:
+            _process_csv_upload(f_inc, f_bal, f_cf)
+
+    # ── Current status ────────────────────────────────────────────────────────
+    st.markdown("---")
+    if "uploaded_datasets" in st.session_state:
+        d = st.session_state["uploaded_datasets"]
+        n = len(d["income_statement"])
+        st.success(
+            f"✅ **Real data loaded** — {n} quarters "
+            f"({d['income_statement'].index[0]} to {d['income_statement'].index[-1]}). "
+            "Navigate to any page to see the analysis."
+        )
+    else:
+        st.info("Currently using **demo data** (Acme Corp sample, 2021–2024). Upload your data above to analyse your company.")
+
+    # ── Format reference ──────────────────────────────────────────────────────
+    with st.expander("📋 Column reference — required fields per statement"):
+        for name, cols in SCHEMA.items():
+            st.markdown(f"**{name.replace('_', ' ').title()}** ({len(cols)} columns)")
+            st.code(", ".join(cols))
+
+
+def _process_excel_upload(excel_file):
+    """Parse Excel with 3 sheets and store in session state."""
+    try:
+        sheets = pd.read_excel(excel_file, sheet_name=None)
+        sheet_map = {
+            "Income Statement": "income_statement",
+            "Balance Sheet":    "balance_sheet",
+            "Cash Flow":        "cash_flow",
+        }
+        missing = [s for s in sheet_map if s not in sheets]
+        if missing:
+            st.error(f"Missing sheets: {missing}. Expected: {list(sheet_map.keys())}")
+            return
+
+        datasets = load_from_dataframes(
+            sheets["Income Statement"],
+            sheets["Balance Sheet"],
+            sheets["Cash Flow"],
+        )
+        st.session_state["uploaded_datasets"] = datasets
+        st.success("✅ Excel uploaded successfully! Navigate to any page to see the analysis.")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Upload failed: {e}")
+        st.caption("Check that period column uses format `YYYY-Qn` (e.g. `2023-Q1`) and all required columns are present.")
+
+
+def _process_csv_upload(f_inc, f_bal, f_cf):
+    """Parse 3 CSV files and store in session state."""
+    try:
+        datasets = load_from_dataframes(
+            pd.read_csv(f_inc),
+            pd.read_csv(f_bal),
+            pd.read_csv(f_cf),
+        )
+        st.session_state["uploaded_datasets"] = datasets
+        st.success("✅ CSV files uploaded successfully! Navigate to any page to see the analysis.")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Upload failed: {e}")
+        st.caption("Check that period column uses format `YYYY-Qn` and all required columns are present.")
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
-    with st.spinner("Loading financial intelligence platform…"):
-        (datasets, kpi_report, kpi_df, kpi_summary,
-         forecasts, fc_df, health, dupoint) = load_all()
+    # Use uploaded real data if available, else fall back to cached demo data
+    if "uploaded_datasets" in st.session_state:
+        with st.spinner("Processing your financial data…"):
+            results = _compute_all(st.session_state["uploaded_datasets"])
+    else:
+        with st.spinner("Loading financial intelligence platform…"):
+            results = load_all()
+
+    (datasets, kpi_report, kpi_df, kpi_summary,
+     forecasts, fc_df, health, dupoint) = results
 
     income    = datasets["income_statement"]
     balance   = datasets["balance_sheet"]
@@ -1008,6 +1176,8 @@ def main():
         page_anomalies(kpi_report)
     elif page == "AI CFO Assistant":
         page_ai_assistant(income, balance, cash_flow, kpi_summary, fc_df, health, company_name)
+    elif page == "Upload Data":
+        page_upload()
 
 
 if __name__ == "__main__":

@@ -96,6 +96,19 @@ def load_financial_data(data_dir: str | Path = "data") -> dict[str, pd.DataFrame
     return datasets
 
 
+def load_from_dataframes(
+    income_df: pd.DataFrame,
+    balance_df: pd.DataFrame,
+    cash_flow_df: pd.DataFrame,
+) -> dict[str, pd.DataFrame]:
+    """Process raw DataFrames (from file upload) the same way as CSV loader."""
+    return {
+        "income_statement": _clean(_parse_period(income_df.copy()), "income_statement"),
+        "balance_sheet":    _clean(_parse_period(balance_df.copy()), "balance_sheet"),
+        "cash_flow":        _clean(_parse_period(cash_flow_df.copy()), "cash_flow"),
+    }
+
+
 def get_combined_view(datasets: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """
     Merge all three statements on the period index for a unified view.
